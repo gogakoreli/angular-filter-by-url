@@ -1,6 +1,15 @@
 import { Component, OnInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { MatPaginator, MatSort, MatTableDataSource } from '@angular/material';
+import { ActivatedRoute, Router } from '@angular/router';
+import {
+    combineAll,
+    combineLatest,
+    merge,
+    switchMap,
+    tap,
+    withLatestFrom,
+} from 'rxjs/operators';
 
 @Component({
     selector: 'app-root',
@@ -18,6 +27,8 @@ export class AppComponent implements OnInit {
 
     constructor(
         private fb: FormBuilder,
+        public router: Router,
+        public activatedRoute: ActivatedRoute,
     ) { }
 
     ngOnInit(
@@ -28,17 +39,27 @@ export class AppComponent implements OnInit {
             weight: [null],
             symbol: [null],
         });
+
+        this.filterForm.valueChanges.pipe(
+            combineLatest(this.paginator.page, this.sort.sortChange)
+        ).subscribe((x) => {
+            console.log(x);
+        })
+
+        const params = this.activatedRoute.snapshot.queryParamMap;
+        console.log(params);
+        this.paginator.length = 20;
     }
 
-    ngAfterViewInit() {
-        this.dataSource.paginator = this.paginator;
-        this.dataSource.sort = this.sort;
-    }
-
-    applyFilter(filterValue: string) {
-        filterValue = filterValue.trim();
-        filterValue = filterValue.toLowerCase();
-        this.dataSource.filter = filterValue;
+    updateQueryParams() {
+        this.router.navigate([], {
+            queryParams: {
+                page: this.paginator.pageIndex + 1,
+                pageSize: this.paginator.pageSize,
+                sort: this.sort.active,
+                direction: this.sort.direction,
+            }
+        });
     }
 }
 
