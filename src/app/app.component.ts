@@ -9,6 +9,7 @@ import {
     switchMap,
     tap,
     withLatestFrom,
+    startWith,
 } from 'rxjs/operators';
 
 @Component({
@@ -41,24 +42,24 @@ export class AppComponent implements OnInit {
         });
 
         this.filterForm.valueChanges.pipe(
-            combineLatest(this.paginator.page, this.sort.sortChange)
-        ).subscribe((x) => {
-            console.log(x);
-        })
+            merge(this.paginator.page, this.sort.sortChange),
+        ).subscribe(_ => {
+            this.updateQueryParams();
+        });
 
         const params = this.activatedRoute.snapshot.queryParamMap;
-        console.log(params);
         this.paginator.length = 20;
     }
 
     updateQueryParams() {
+        const params = {
+            page: this.paginator.pageIndex + 1,
+            pageSize: this.paginator.pageSize,
+            sort: this.sort.active,
+            direction: this.sort.direction,
+        };
         this.router.navigate([], {
-            queryParams: {
-                page: this.paginator.pageIndex + 1,
-                pageSize: this.paginator.pageSize,
-                sort: this.sort.active,
-                direction: this.sort.direction,
-            }
+            queryParams: params
         });
     }
 }
