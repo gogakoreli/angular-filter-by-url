@@ -2,6 +2,8 @@ import { Component, OnInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { MatPaginator, MatSort, MatTableDataSource } from '@angular/material';
 import { ActivatedRoute, Router } from '@angular/router';
+import { Observable } from 'rxjs/Observable';
+import { interval } from 'rxjs/observable/interval';
 import {
     combineAll,
     combineLatest,
@@ -10,6 +12,8 @@ import {
     tap,
     withLatestFrom,
     startWith,
+    map,
+    take,
 } from 'rxjs/operators';
 
 @Component({
@@ -25,6 +29,8 @@ export class AppComponent implements OnInit {
     @ViewChild(MatSort) sort: MatSort;
 
     filterForm: FormGroup;
+    queryParams: Filter;
+    loading = false;
 
     constructor(
         private fb: FormBuilder,
@@ -47,21 +53,70 @@ export class AppComponent implements OnInit {
             this.updateQueryParams();
         });
 
-        const params = this.activatedRoute.snapshot.queryParamMap;
-        this.paginator.length = 20;
+        this.activatedRoute.queryParams.subscribe((x: Filter) => {
+            this.queryParams = {
+                page: Number(x.page),
+                pageSize: Number(x.pageSize),
+                direction: x.direction,
+                sort: x.sort,
+            };
+
+            this.refresh();
+        });
     }
 
     updateQueryParams() {
         const params = {
             page: this.paginator.pageIndex + 1,
             pageSize: this.paginator.pageSize,
-            sort: this.sort.active,
-            direction: this.sort.direction,
+            sort: this.sort.direction === '' ? undefined : this.sort.active,
+            direction: this.sort.direction === '' ? undefined : this.sort.direction,
         };
+
+        const filter = this.filterForm.value;
+        const keys = Object.keys(this.filterForm.value);
+        keys.forEach(key => {
+            if (!params[key] && filter[key]) {
+                params[key] = filter[key];
+            }
+        });
+
         this.router.navigate([], {
             queryParams: params
         });
     }
+
+    async refresh() {
+        this.loading = true;
+        const response = await this.getData(this.queryParams).toPromise();
+        console.log(response);
+        this.paginator.length = response.count;
+        this.dataSource.data = response.data;
+        this.loading = false;
+    }
+
+    // MOCK THE DATA
+    getData(params: Filter): Observable<{ data: Element[], count: number }> {
+        const res = interval(1000).pipe(
+            take(1),
+            map(x => {
+                const startIndex = (params.page - 1) * params.pageSize;
+                const endIndex = startIndex + params.pageSize;
+                const data = ELEMENT_DATA.slice(startIndex, endIndex);
+                console.log(data);
+                return { data, count: ELEMENT_DATA.length };
+            })
+        );
+
+        return res;
+    }
+}
+
+export interface Filter {
+    page: number;
+    pageSize: number;
+    sort: string;
+    direction: '' | 'asc' | 'desc';
 }
 
 export interface Element {
