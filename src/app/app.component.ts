@@ -14,6 +14,7 @@ import {
     startWith,
     map,
     take,
+    debounceTime,
 } from 'rxjs/operators';
 
 @Component({
@@ -38,8 +39,13 @@ export class AppComponent implements OnInit {
         public activatedRoute: ActivatedRoute,
     ) { }
 
-    ngOnInit(
-    ) {
+    ngOnInit() {
+        this.setupFilter();
+        this.initializeFilterValue();
+        // this.subscribeToQueryParams();
+    }
+
+    setupFilter() {
         this.filterForm = this.fb.group({
             position: [null],
             name: [null],
@@ -47,12 +53,23 @@ export class AppComponent implements OnInit {
             symbol: [null],
         });
 
-        this.filterForm.valueChanges.pipe(
-            merge(this.paginator.page, this.sort.sortChange),
-        ).subscribe(_ => {
-            this.updateQueryParams();
-        });
+        // this.filterForm.valueChanges.pipe(
+        //     merge(this.paginator.page, this.sort.sortChange),
+        //     debounceTime(200),
+        // ).subscribe(_ => {
+        //     this.updateQueryParams();
+        // });
+    }
 
+    initializeFilterValue() {
+        const params = this.activatedRoute.snapshot.queryParams;
+        console.log(this.activatedRoute);
+        console.log(this.activatedRoute.queryParams.subscribe(x => {
+            console.log(x);
+        }));
+    }
+
+    subscribeToQueryParams() {
         this.activatedRoute.queryParams.subscribe((x: Filter) => {
             this.queryParams = {
                 page: Number(x.page),
@@ -88,22 +105,23 @@ export class AppComponent implements OnInit {
 
     async refresh() {
         this.loading = true;
-        const response = await this.getData(this.queryParams).toPromise();
-        console.log(response);
-        this.paginator.length = response.count;
-        this.dataSource.data = response.data;
-        this.loading = false;
+        this.getData(this.queryParams).subscribe(x => {
+            console.log(x);
+            this.paginator.length = x.count;
+            this.dataSource.data = x.data;
+            this.loading = false;
+        });
     }
 
     // MOCK THE DATA
     getData(params: Filter): Observable<{ data: Element[], count: number }> {
-        const res = interval(1000).pipe(
+        const res = interval(200).pipe(
             take(1),
             map(x => {
                 const startIndex = (params.page - 1) * params.pageSize;
                 const endIndex = startIndex + params.pageSize;
                 const data = ELEMENT_DATA.slice(startIndex, endIndex);
-                console.log(data);
+                console.log('getdata params', params);
                 return { data, count: ELEMENT_DATA.length };
             })
         );
