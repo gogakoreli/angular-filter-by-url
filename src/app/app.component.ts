@@ -1,9 +1,20 @@
-import { Component, OnInit, ViewChild } from '@angular/core';
+import {
+    Component,
+    OnDestroy,
+    OnInit,
+    ViewChild
+    } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
-import { MatPaginator, MatSort, MatTableDataSource } from '@angular/material';
+import {
+    MatPaginator,
+    MatSort,
+    MatSortable,
+    MatTableDataSource
+    } from '@angular/material';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Observable } from 'rxjs/Observable';
 import { interval } from 'rxjs/observable/interval';
+import { Subject } from 'rxjs/Subject';
 import {
     combineAll,
     combineLatest,
@@ -15,6 +26,8 @@ import {
     map,
     take,
     debounceTime,
+    filter,
+    takeUntil,
 } from 'rxjs/operators';
 
 @Component({
@@ -22,10 +35,10 @@ import {
     templateUrl: './app.component.html',
     styleUrls: ['./app.component.scss'],
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
 
     displayedColumns = ['position', 'name', 'weight', 'symbol'];
-    dataSource = new MatTableDataSource(ELEMENT_DATA);
+    dataSource = new MatTableDataSource();
     @ViewChild(MatPaginator) paginator: MatPaginator;
     @ViewChild(MatSort) sort: MatSort;
 
@@ -33,49 +46,81 @@ export class AppComponent implements OnInit {
     queryParams: Filter;
     loading = false;
 
+    unsubscribe$ = new Subject<any>();
+
     constructor(
         private fb: FormBuilder,
         public router: Router,
         public activatedRoute: ActivatedRoute,
     ) { }
 
-    ngOnInit() {
+    async ngOnInit() {
         this.setupFilter();
-        this.initializeFilterValue();
-        // this.subscribeToQueryParams();
+        await this.initializeFilterValue().toPromise();
+        this.applyFilter();
+        this.subscribeToQueryParams();
+    }
+
+    ngOnDestroy() {
+        this.unsubscribe$.next();
     }
 
     setupFilter() {
         this.filterForm = this.fb.group({
-            position: [null],
-            name: [null],
-            weight: [null],
-            symbol: [null],
+            search: [null],
         });
 
-        // this.filterForm.valueChanges.pipe(
-        //     merge(this.paginator.page, this.sort.sortChange),
-        //     debounceTime(200),
-        // ).subscribe(_ => {
-        //     this.updateQueryParams();
-        // });
+        this.filterForm.valueChanges.pipe(
+            merge(this.paginator.page, this.sort.sortChange),
+            debounceTime(200),
+            takeUntil(this.unsubscribe$),
+        ).subscribe(_ => {
+            this.updateQueryParams();
+        });
     }
 
-    initializeFilterValue() {
-        const params = this.activatedRoute.snapshot.queryParams;
-        console.log(this.activatedRoute);
-        console.log(this.activatedRoute.queryParams.subscribe(x => {
-            console.log(x);
-        }));
+    initializeFilterValue(): Observable<any> {
+        const result = this.activatedRoute.queryParams.pipe(
+            filter(x => x.page),
+            take(1),
+            tap(x => {
+                const params: any = { direction: 'asc' };
+
+                const keys = Object.keys(x);
+                keys.forEach(key => {
+                    params[key] = x[key];
+                });
+
+                this.queryParams = params;
+            })
+        );
+        return result;
+    }
+
+    applyFilter() {
+        if (this.queryParams.page) {
+            this.paginator.pageIndex = this.queryParams.page - 1;
+        }
+        if (this.queryParams.pageSize) {
+            this.paginator.pageSize = this.queryParams.pageSize;
+        }
+        if (this.queryParams.sort) {
+            const sortable: MatSortable = { id: this.queryParams.sort, start: <any>this.queryParams.direction, disableClear: null };
+            this.sort.sort(sortable);
+        }
+        this.filterForm.patchValue(this.queryParams);
     }
 
     subscribeToQueryParams() {
-        this.activatedRoute.queryParams.subscribe((x: Filter) => {
+        this.activatedRoute.queryParams.pipe(
+            takeUntil(this.unsubscribe$)
+        ).subscribe((x: Filter) => {
             this.queryParams = {
                 page: Number(x.page),
                 pageSize: Number(x.pageSize),
                 direction: x.direction,
                 sort: x.sort,
+                search: x.search,
             };
 
             this.refresh();
@@ -98,6 +143,7 @@ export class AppComponent implements OnInit {
             }
         });
 
+        console.log(params);
         this.router.navigate([], {
             queryParams: params
         });
@@ -105,8 +151,9 @@ export class AppComponent implements OnInit {
 
     async refresh() {
         this.loading = true;
-        this.getData(this.queryParams).subscribe(x => {
-            console.log(x);
+        this.getData(this.queryParams).pipe(
+            takeUntil(this.unsubscribe$)
+        ).subscribe(x => {
             this.paginator.length = x.count;
             this.dataSource.data = x.data;
             this.loading = false;
@@ -118,11 +165,24 @@ export class AppComponent implements OnInit {
         const res = interval(200).pipe(
             take(1),
             map(x => {
+                let data = ELEMENT_DATA;
+                if (params.search) {
+                    data = data.filter(x => {
+                        let result = false;
+                        Object.keys(x).forEach(key => {
+                            if ((x[key] + "").toLowerCase().indexOf(params.search.toLowerCase()) >= 0) {
+                                result = true;
+                            }
+                        });
+                        return result;
+                    })
+                }
+                const count = data.length;
+
                 const startIndex = (params.page - 1) * params.pageSize;
                 const endIndex = startIndex + params.pageSize;
-                const data = ELEMENT_DATA.slice(startIndex, endIndex);
-                console.log('getdata params', params);
-                return { data, count: ELEMENT_DATA.length };
+                data = data.slice(startIndex, endIndex);
+                return { data, count };
             })
         );
 
@@ -135,6 +195,7 @@ export interface Filter {
     pageSize: number;
     sort: string;
     direction: '' | 'asc' | 'desc';
+    search: string;
 }
 
 export interface Element {
